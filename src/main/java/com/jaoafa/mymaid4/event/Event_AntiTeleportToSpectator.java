@@ -41,19 +41,27 @@ public class Event_AntiTeleportToSpectator extends MyMaidLibrary implements List
             return;
         }
         if (toPlayer.getGameMode() == GameMode.SPECTATOR) {
-            return;
-        }
-        if (!(event.getSender() instanceof Player) || isAMRV((Player) event.getSender())) {
             event.getSender().sendMessage(Component.text().append(
                 Component.text("[TELEPORT]"),
                 Component.space(),
                 Component.text("スペクテイタープレイヤーへのテレポートは禁止されています。スペクテイターで実行してください。").style(Style.style(NamedTextColor.GREEN))
             ));
         } else {
+            return;
+        }
+        if (!(event.getSender() instanceof Player) || isAMRV((Player) event.getSender())) {
             event.getSender().sendMessage(Component.text().append(
                 Component.text("[TELEPORT]"),
                 Component.space(),
-                Component.text("何らかの理由によりテレポートできませんでした。").style(Style.style(NamedTextColor.GREEN))
+                Component.text("テレポートはVerified権限以上のプレイヤーのみ実行できます。").style(Style.style(NamedTextColor.GREEN))
+            ));
+        } else {
+            event.getSender().sendMessage(Component.text().append(
+                Component.text("[TELEPORT]"),
+                Component.space(),
+                //bug報告コマンドあったらそっち提示したほうがいいかも
+                Component.text("何らかの理由によりテレポートできませんでした。jMS開発部へ連絡してください").style(Style.style(NamedTextColor.GREEN))
+
             ));
         }
         event.setCancelled(true);
