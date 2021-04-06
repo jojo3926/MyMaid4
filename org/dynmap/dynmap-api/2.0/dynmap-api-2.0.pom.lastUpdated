@@ -1,0 +1,9 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Sat Apr 03 19:38:46 JST 2021
+https\://m2.dv8tion.net/releases/.error=Could not transfer artifact org.dynmap\:dynmap-api\:pom\:2.0 from/to dv8tion (https\://m2.dv8tion.net/releases)\: Transfer failed for https\://m2.dv8tion.net/releases/org/dynmap/dynmap-api/2.0/dynmap-api-2.0.pom
+https\://papermc.io/repo/repository/maven-public/.lastUpdated=1617446323993
+https\://repo.mikeprimm.com/.lastUpdated=1617446326209
+https\://papermc.io/repo/repository/maven-public/.error=
+@default-dv8tion-https\://m2.dv8tion.net/releases/.lastUpdated=1617446325005
+https\://oss.sonatype.org/content/groups/public/.error=
+https\://oss.sonatype.org/content/groups/public/.lastUpdated=1617446324841

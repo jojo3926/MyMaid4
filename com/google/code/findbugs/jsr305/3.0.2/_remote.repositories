@@ -1,0 +1,6 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Sat Apr 03 19:41:56 JST 2021
+jsr305-3.0.2.jar>papermc-repo=
+jsr305-3.0.2.jar>central=
+jsr305-3.0.2.pom>papermc-repo=
+jsr305-3.0.2.pom>central=

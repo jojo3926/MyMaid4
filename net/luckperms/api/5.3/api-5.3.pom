@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>net.luckperms</groupId>
+  <artifactId>api</artifactId>
+  <version>5.3</version>
+  <name>LuckPerms API</name>
+  <description>A permissions plugin for Minecraft servers.</description>
+  <url>https://luckperms.net</url>
+  <licenses>
+    <license>
+      <name>MIT</name>
+      <url>https://opensource.org/licenses/MIT</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>lucko</id>
+      <name>Luck</name>
+      <email>git@lucko.me</email>
+      <url>https://lucko.me</url>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:https://github.com/lucko/LuckPerms.git</connection>
+    <developerConnection>scm:git:git@github.com:lucko/LuckPerms.git</developerConnection>
+    <url>https://github.com/lucko/LuckPerms</url>
+  </scm>
+  <issueManagement>
+    <system>GitHub</system>
+    <url>https://github.com/lucko/LuckPerms/issues</url>
+  </issueManagement>
+  <ciManagement>
+    <system>Jenkins</system>
+    <url>https://ci.lucko.me/job/LuckPerms</url>
+  </ciManagement>
+</project>
