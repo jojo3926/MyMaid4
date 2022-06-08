@@ -1,7 +1,7 @@
 /*
  * jaoLicense
  *
- * Copyright (c) 2021 jao Minecraft Server
+ * Copyright (c) 2022 jao Minecraft Server
  *
  * The following license applies to this project: jaoLicense
  *
@@ -12,13 +12,10 @@
 package com.jaoafa.mymaid4.event;
 
 import com.jaoafa.mymaid4.Main;
-import com.jaoafa.mymaid4.lib.ChatBan;
-import com.jaoafa.mymaid4.lib.EBan;
-import com.jaoafa.mymaid4.lib.MyMaidData;
-import com.jaoafa.mymaid4.lib.MyMaidLibrary;
+import com.jaoafa.mymaid4.lib.*;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.plain.PlainComponentSerializer;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -27,6 +24,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
@@ -37,20 +35,25 @@ import org.bukkit.event.player.*;
 import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
 import org.bukkit.scheduler.BukkitRunnable;
 
-public class Event_EBan implements Listener {
+public class Event_EBan implements Listener, EventPremise {
+    @Override
+    public String description() {
+        return "EBanに関する各種処理を行います。";
+    }
+
     @EventHandler
     public void onEvent_ChatLiquidBounce(AsyncChatEvent event) {
         Player player = event.getPlayer();
         Component component = event.message();
-        String message = PlainComponentSerializer.plain().serialize(component);
-        EBan eban = new EBan(player);
+        String message = PlainTextComponentSerializer.plainText().serialize(component);
+        EBan eban = EBan.getInstance(player);
 
-        if (!eban.isBanned()) return;
+        if (!eban.isStatus()) return;
         if (!message.contains("LiquidBounce Client | liquidbounce.net")) return;
 
         eban.addBan("jaotan", "禁止クライアント「LiquidBounce」使用の疑い。");
 
-        ChatBan chatban = new ChatBan(player);
+        ChatBan chatban = ChatBan.getInstance(player);
         chatban.addBan("jaotan", "禁止クライアント「LiquidBounce」使用の疑い。");
 
         event.setCancelled(true);
@@ -66,9 +69,9 @@ public class Event_EBan implements Listener {
         new BukkitRunnable() {
             @Override
             public void run() {
-                EBan eban = new EBan(player);
-                if (!eban.isBanned()) return;
-                String reason = eban.getEBanData().getReason();
+                EBan eban = EBan.getInstance(player);
+                if (!eban.isStatus()) return;
+                String reason = eban.getReason();
                 if (reason == null) return;
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     if (!MyMaidLibrary.isAMR(p)) continue;
@@ -90,16 +93,16 @@ public class Event_EBan implements Listener {
 
         Location to = event.getTo();
         Player player = event.getPlayer();
-        EBan eban = new EBan(player);
+        EBan eban = EBan.getInstance(player);
         // EBanされてる
-        if (!eban.isBanned()) return;
+        if (!eban.isStatus()) return;
         World world = Bukkit.getServer().getWorld("Jao_Afa");
         if (world == null) return;
-        Location prison = new Location(world, 2856, 69, 2888);
+        Location prison = MyMaidData.paradiseLocation;
         if (!player.getLocation().getWorld().getUID().equals(world.getUID())) {
             player.sendMessage("[EBan] " + ChatColor.GREEN + "あなたは南の楽園から出られません！");
             // ワールド違い
-            if (!player.teleport(prison, TeleportCause.PLUGIN)) {
+            if (!MyMaidLibrary.teleportToParadise(player)) {
                 // 失敗時
                 Location oldBed = player.getBedSpawnLocation();
                 player.setBedSpawnLocation(prison, true);
@@ -126,21 +129,19 @@ public class Event_EBan implements Listener {
     @EventHandler
     public void onPlayerRespawnEvent(PlayerRespawnEvent event) {
         Player player = event.getPlayer();
-        EBan eban = new EBan(player);
+        EBan eban = EBan.getInstance(player);
         // EBanされてる
-        if (!eban.isBanned()) return;
-        World World = Bukkit.getServer().getWorld("Jao_Afa");
-        Location prison = new Location(World, 2856, 69, 2888);
-        event.setRespawnLocation(prison);
+        if (!eban.isStatus()) return;
+        event.setRespawnLocation(MyMaidData.paradiseLocation);
     }
 
     @EventHandler
     public void onBlockPlaceEvent(BlockPlaceEvent event) {
         Player player = event.getPlayer();
         if (!player.getLocation().getWorld().getName().equalsIgnoreCase("Jao_Afa")) return;
-        EBan eban = new EBan(player);
+        EBan eban = EBan.getInstance(player);
         // EBanされてる
-        if (!eban.isBanned()) return;
+        if (!eban.isStatus()) return;
         event.setCancelled(true);
         player.sendMessage("[EBan] " + ChatColor.GREEN + "あなたはブロックを置けません。");
         Bukkit.getLogger().info("[EBan] " + player.getName() + "==>あなたはブロックを置けません。");
@@ -149,9 +150,9 @@ public class Event_EBan implements Listener {
     @EventHandler
     public void onBlockBreakEvent(BlockBreakEvent event) {
         Player player = event.getPlayer();
-        EBan eban = new EBan(player);
+        EBan eban = EBan.getInstance(player);
         // EBanされてる
-        if (!eban.isBanned()) return;
+        if (!eban.isStatus()) return;
         event.setCancelled(true);
         player.sendMessage("[EBan] " + ChatColor.GREEN + "あなたはブロックを壊せません。");
         Bukkit.getLogger().info("[EBan] " + player.getName() + "==>あなたはブロックを壊せません。");
@@ -161,9 +162,9 @@ public class Event_EBan implements Listener {
     public void onBlockIgniteEvent(BlockIgniteEvent event) {
         Player player = event.getPlayer();
         if (player == null) return;
-        EBan eban = new EBan(player);
+        EBan eban = EBan.getInstance(player);
         // EBanされてる
-        if (!eban.isBanned()) return;
+        if (!eban.isStatus()) return;
         event.setCancelled(true);
         player.sendMessage("[EBan] " + ChatColor.GREEN + "あなたはブロックを着火できません。");
         Bukkit.getLogger().info("[EBan] " + player.getName() + "==>あなたはブロックを着火できません。");
@@ -172,9 +173,9 @@ public class Event_EBan implements Listener {
     @EventHandler
     public void onPlayerBucketEmptyEvent(PlayerBucketEmptyEvent event) {
         Player player = event.getPlayer();
-        EBan eban = new EBan(player);
+        EBan eban = EBan.getInstance(player);
         // EBanされてる
-        if (!eban.isBanned()) return;
+        if (!eban.isStatus()) return;
         event.setCancelled(true);
         player.sendMessage("[EBan] " + ChatColor.GREEN + "あなたは水や溶岩を撒けません。");
         Bukkit.getLogger().info("[EBan] " + player.getName() + "==>あなたは水や溶岩を撒けません。");
@@ -183,9 +184,9 @@ public class Event_EBan implements Listener {
     @EventHandler
     public void onPlayerBucketFillEvent(PlayerBucketFillEvent event) {
         Player player = event.getPlayer();
-        EBan eban = new EBan(player);
+        EBan eban = EBan.getInstance(player);
         // EBanされてる
-        if (!eban.isBanned()) return;
+        if (!eban.isStatus()) return;
         event.setCancelled(true);
         player.sendMessage("[EBan] " + ChatColor.GREEN + "あなたは水や溶岩を掬うことはできません。");
         Bukkit.getLogger().info("[EBan] " + player.getName() + "==>あなたは水や溶岩を掬うことはできません。");
@@ -193,29 +194,28 @@ public class Event_EBan implements Listener {
 
     @EventHandler
     public void onPlayerPickupItemEvent(EntityPickupItemEvent event) {
-        if (!(event.getEntity() instanceof Player)) return;
-        Player player = (Player) event.getEntity();
-        EBan eban = new EBan(player);
+        if (!(event.getEntity() instanceof Player player)) return;
+        EBan eban = EBan.getInstance(player);
         // EBanされてる
-        if (!eban.isBanned()) return;
+        if (!eban.isStatus()) return;
         event.setCancelled(true);
     }
 
     @EventHandler
     public void onPlayerDropItemEvent(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
-        EBan eban = new EBan(player);
+        EBan eban = EBan.getInstance(player);
         // EBanされてる
-        if (!eban.isBanned()) return;
+        if (!eban.isStatus()) return;
         event.setCancelled(true);
     }
 
     @EventHandler
     public void onPlayerCommandPreprocessEvent(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
-        EBan eban = new EBan(player);
+        EBan eban = EBan.getInstance(player);
         // EBanされてる
-        if (!eban.isBanned()) return;
+        if (!eban.isStatus()) return;
         event.setCancelled(true);
         player.sendMessage("[EBan] " + ChatColor.GREEN + "あなたはコマンドを実行できません。");
         Bukkit.getLogger().info("[EBan] " + player.getName() + "==>あなたはコマンドを実行できません。");
@@ -223,21 +223,34 @@ public class Event_EBan implements Listener {
 
     @EventHandler
     public void onProjectileLaunchEvent(ProjectileLaunchEvent event) {
-        if (!(event.getEntity().getShooter() instanceof Player)) return;
-        Player player = (Player) event.getEntity().getShooter();
-        EBan eban = new EBan(player);
+        if (!(event.getEntity().getShooter() instanceof Player player)) return;
+        EBan eban = EBan.getInstance(player);
         // EBanされてる
-        if (!eban.isBanned()) return;
+        if (!eban.isStatus()) return;
         event.setCancelled(true);
     }
 
     @EventHandler
     public void onPotionSplashEvent(PotionSplashEvent event) {
-        if (!(event.getEntity().getShooter() instanceof Player)) return;
-        Player player = (Player) event.getEntity().getShooter();
-        EBan eban = new EBan(player);
-        // EBanされてる
-        if (!eban.isBanned()) return;
+        if (!(event.getEntity().getShooter() instanceof Player player)) return;
+        EBan eban = EBan.getInstance(player);
+        if (!eban.isStatus()) return; // EBanされてる
+        event.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        Player player = event.getPlayer();
+        EBan eban = EBan.getInstance(player);
+        if (!eban.isStatus()) { // EBanされてる
+            return;
+        }
+        if (event.getAction() == Action.LEFT_CLICK_AIR || event.getAction() == Action.RIGHT_CLICK_AIR) {
+            return; // 空気に対するアクションは無視
+        }
+        if (Jail.actionWhitelist.stream().noneMatch(action -> action.action() == event.getAction() && action.checker().check(event))) {
+            return; // アクションがホワイトリストにない場合は無視
+        }
         event.setCancelled(true);
     }
 
@@ -247,20 +260,7 @@ public class Event_EBan implements Listener {
         new BukkitRunnable() {
             @Override
             public void run() {
-                EBan eban = new EBan(player);
-                eban.getEBanData().fetchData(false);
-            }
-        }.runTaskAsynchronously(Main.getJavaPlugin());
-    }
-
-    @EventHandler
-    public void onQuitClearCache(PlayerQuitEvent event) {
-        Player player = event.getPlayer();
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                EBan eban = new EBan(player);
-                eban.getEBanData().fetchData(false);
+                EBan.getInstance(player, true);
             }
         }.runTaskAsynchronously(Main.getJavaPlugin());
     }

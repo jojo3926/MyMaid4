@@ -1,7 +1,7 @@
 /*
  * jaoLicense
  *
- * Copyright (c) 2021 jao Minecraft Server
+ * Copyright (c) 2022 jao Minecraft Server
  *
  * The following license applies to this project: jaoLicense
  *
@@ -23,8 +23,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class Home extends MyMaidLibrary {
-    static Map<UUID, Set<Detail>> homeNames = new HashMap<>();
-    OfflinePlayer player;
+    static final Map<UUID, Set<Detail>> homeNames = new HashMap<>();
+    final OfflinePlayer player;
 
     public Home(OfflinePlayer player) {
         this.player = player;
@@ -67,14 +67,13 @@ public class Home extends MyMaidLibrary {
 
     public static List<String> suggestHomeName(final CommandContext<CommandSender> context, final String current) {
         List<String> list = new ArrayList<>();
-        if (!(context.getSender() instanceof Player)) {
+        if (!(context.getSender() instanceof Player player)) {
             return list;
         }
-        Player player = (Player) context.getSender();
         if (!homeNames.containsKey(player.getUniqueId())) {
             fetchHomeNames(player);
         }
-        list.addAll(homeNames.get(player.getUniqueId()).stream().map(detail -> detail.name).collect(Collectors.toList()));
+        list.addAll(homeNames.get(player.getUniqueId()).stream().map(detail -> detail.name).toList());
 
         return list.stream()
             .filter(s -> s.toLowerCase().startsWith(current.toLowerCase()))
@@ -85,6 +84,7 @@ public class Home extends MyMaidLibrary {
      * ホーム情報を取得する
      *
      * @param name ホームネーム
+     *
      * @return ホームの場所。なければNull
      */
     public Detail get(String name) {
@@ -103,6 +103,7 @@ public class Home extends MyMaidLibrary {
      *
      * @param name ホームネーム
      * @param loc  ホームの場所
+     *
      * @return 成功したか
      */
     public boolean set(String name, Location loc) {
@@ -143,6 +144,7 @@ public class Home extends MyMaidLibrary {
      * ホームを削除する
      *
      * @param name ホームネーム
+     *
      * @return 成功したか
      */
     public boolean remove(String name) {
@@ -176,6 +178,7 @@ public class Home extends MyMaidLibrary {
      * ホームが存在するかどうかをチェックする
      *
      * @param name ホームネーム
+     *
      * @return ホームが存在すればTrue
      */
     public boolean exists(String name) {
@@ -209,27 +212,8 @@ public class Home extends MyMaidLibrary {
         return homeNames.get(player.getUniqueId());
     }
 
-    public static class Detail {
-        public String name;
-        public String worldName;
-        public double x;
-        public double y;
-        public double z;
-        public float yaw;
-        public float pitch;
-        public Timestamp create_at;
-
-        public Detail(String name, String worldName, double x, double y, double z, float yaw, float pitch, Timestamp create_at) {
-            this.name = name;
-            this.worldName = worldName;
-            this.x = x;
-            this.y = y;
-            this.z = z;
-            this.yaw = yaw;
-            this.pitch = pitch;
-            this.create_at = create_at; // created_atに変えたい
-        }
-
+    public record Detail(String name, String worldName, double x, double y, double z, float yaw,
+                         float pitch, Timestamp create_at) {
         public Location getLocation() {
             return new Location(
                 Bukkit.getWorld(worldName),

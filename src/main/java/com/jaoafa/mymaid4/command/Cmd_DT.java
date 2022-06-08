@@ -1,7 +1,7 @@
 /*
  * jaoLicense
  *
- * Copyright (c) 2021 jao Minecraft Server
+ * Copyright (c) 2022 jao Minecraft Server
  *
  * The following license applies to this project: jaoLicense
  *
@@ -11,13 +11,17 @@
 
 package com.jaoafa.mymaid4.command;
 
+import cloud.commandframework.ArgumentDescription;
 import cloud.commandframework.Command;
 import cloud.commandframework.arguments.standard.IntegerArgument;
 import cloud.commandframework.arguments.standard.StringArgument;
+import cloud.commandframework.bukkit.arguments.selector.MultipleEntitySelector;
+import cloud.commandframework.bukkit.parsers.selector.MultipleEntitySelectorArgument;
 import cloud.commandframework.context.CommandContext;
 import cloud.commandframework.meta.CommandMeta;
 import com.jaoafa.mymaid4.lib.CommandPremise;
 import com.jaoafa.mymaid4.lib.MyMaidCommand;
+import com.jaoafa.mymaid4.lib.MyMaidData;
 import com.jaoafa.mymaid4.lib.MyMaidLibrary;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
@@ -30,6 +34,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.dynmap.DynmapAPI;
@@ -39,6 +44,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
+    private static final Map<UUID, Long> DTCooldown = new HashMap<>();
+
     @Override
     public MyMaidCommand.Detail details() {
         return new MyMaidCommand.Detail(
@@ -46,7 +53,6 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
             "DynmapのMarkerを編集・テレポートします。"
         );
     }
-
 
     @Override
     public MyMaidCommand.Cmd register(Command.Builder<CommandSender> builder) {
@@ -57,31 +63,31 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
                 .argument(StringArgument
                     .<CommandSender>newBuilder("markerName")
                     .single()
-                    .withSuggestionsProvider(this::suggestMarkerNames))
+                    .withSuggestionsProvider(this::suggestMarkerNames), ArgumentDescription.of("マーカー名"))
                 .handler(this::teleportMarker)
                 .build(),
-            /*
             builder
-                .meta(CommandMeta.DESCRIPTION, "プレイヤーをマーカーにテレポートさせます。")
-                .argument(MultiplePlayerSelectorArgument
-                    .newBuilder("player"))
+                .meta(CommandMeta.DESCRIPTION, "エンティティをマーカーにテレポートさせます。")
+                .literal("tp")
+                .argument(MultipleEntitySelectorArgument
+                    .newBuilder("targets"), ArgumentDescription.of("エンティティ対象セレクター"))
                 .argument(StringArgument
-                    .newBuilder("markerName"))
-                .handler(this::teleportMarker)
+                    .<CommandSender>newBuilder("markerName")
+                    .withSuggestionsProvider(this::suggestMarkerNames), ArgumentDescription.of("マーカー名"))
+                .handler(this::teleportOtherMarker)
                 .build(),
-             */
             builder
                 .meta(CommandMeta.DESCRIPTION, "マーカーを追加します。")
                 .senderType(Player.class)
                 .literal("add", "set")
-                .argument(StringArgument.of("markerName"))
+                .argument(StringArgument.of("markerName"), ArgumentDescription.of("マーカー名"))
                 .argument(StringArgument
                     .<CommandSender>newBuilder("markerType")
-                    .withSuggestionsProvider(this::suggestMarkerTypes))
+                    .withSuggestionsProvider(this::suggestMarkerTypes), ArgumentDescription.of("マーカー種別"))
                 .argument(StringArgument
                     .<CommandSender>newBuilder("markerIcon")
                     .asOptional()
-                    .withSuggestionsProvider(this::suggestMarkerIcons))
+                    .withSuggestionsProvider(this::suggestMarkerIcons), ArgumentDescription.of("マーカーアイコン"))
                 .handler(this::addMarker)
                 .build(),
             builder
@@ -90,7 +96,7 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
                 .literal("del", "remove", "rem")
                 .argument(StringArgument
                     .<CommandSender>newBuilder("markerName")
-                    .withSuggestionsProvider(this::suggestMarkerNames))
+                    .withSuggestionsProvider(this::suggestMarkerNames), ArgumentDescription.of("マーカー名"))
                 .handler(this::delMarker)
                 .build(),
             builder
@@ -106,37 +112,40 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
                 .handler(this::getNearMarker)
                 .build(),
             builder
+                .meta(CommandMeta.DESCRIPTION, "近くのマーカーにテレポートします。")
+                .senderType(Player.class)
+                .literal("neartp")
+                .handler(this::getNearTpMarker)
+                .build(),
+            builder
                 .meta(CommandMeta.DESCRIPTION, "マーカーの一覧を表示します。")
                 .senderType(Player.class)
                 .literal("list")
                 .argument(IntegerArgument
                     .<CommandSender>newBuilder("page")
                     .withMin(1)
-                    .asOptionalWithDefault("1"))
+                    .asOptionalWithDefault("1"), ArgumentDescription.of("ページ"))
                 .handler(this::listMarkers)
                 .build()
         );
     }
 
     void teleportMarker(CommandContext<CommandSender> context) {
-        CommandSender sender = context.getSender();
-        Player target = context.getOrDefault("player", null);
+        Player player = (Player) context.getSender();
         String markerName = context.get("markerName");
+        if (!isAMR(player)) {
+            if (DTCooldown.containsKey(player.getUniqueId()) && DTCooldown.get(player.getUniqueId()) > System.currentTimeMillis() - 3000) {
+                SendMessage(context.getSender(), details(), "DTには3秒のクールダウンがあります！少々お待ちください...");
+                return;
+            } else {
+                DTCooldown.put(player.getUniqueId(), System.currentTimeMillis());
+            }
+        }
 
         // /dt <Marker>
-        // /dt <Player> <Marker>
-        if (!isEnabledPlugin("dynmap")) {
-            SendMessage(sender, details(), "Dynmapプラグインが動作していないため、このコマンドは使用できません。");
+        if (isDisabledPlugin("dynmap")) {
+            SendMessage(player, details(), "Dynmapプラグインが動作していないため、このコマンドは使用できません。");
             return;
-        }
-
-        if (target == null && !(sender instanceof Player)) {
-            // プレイヤー以外かつマーカー名しか指定していない
-            SendMessage(sender, details(), "このコマンドはプレイヤーから実行してください。(ターゲットプレイヤーが指定されていません)");
-            return;
-        }
-        if (target == null) {
-            target = (Player) sender;
         }
 
         DynmapAPI dynmapAPI = getDynmapAPI();
@@ -150,7 +159,50 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
             .filter(marker -> marker.getLabel().equals(markerName))
             .findFirst();
 
-        if (!matchedMarker.isPresent()) {
+        if (matchedMarker.isEmpty()) {
+            SendMessage(player, details(), "指定されたマーカー名のマーカーは見つかりませんでした。");
+            Optional<Marker> perhapsMarker = markers.stream()
+                .filter(marker -> marker.getLabel().equalsIgnoreCase(markerName))
+                .findFirst();
+            perhapsMarker.ifPresent(marker -> SendMessage(player, details(), "もしかして: " + marker.getLabel()));
+            return;
+        }
+
+        teleportToMarker(player, player, matchedMarker.get());
+    }
+
+    void teleportOtherMarker(CommandContext<CommandSender> context) {
+        CommandSender sender = context.getSender();
+        MultipleEntitySelector targets = context.get("targets");
+        String markerName = context.get("markerName");
+
+        // /dt tp <EntitySelector> <Marker>
+        if (isDisabledPlugin("dynmap")) {
+            SendMessage(sender, details(), "Dynmapプラグインが動作していないため、このコマンドは使用できません。");
+            return;
+        }
+
+        if (!targets.hasAny() || targets.getEntities().isEmpty()) {
+            SendMessage(context.getSender(), details(), "指定されたエンティティが見つかりませんでした。");
+            return;
+        }
+        if (targets.getEntities().size() >= 10) {
+            SendMessage(context.getSender(), details(), "指定されたエンティティが多すぎます。10以内にして下さい。");
+            return;
+        }
+
+        DynmapAPI dynmapAPI = getDynmapAPI();
+        MarkerAPI markerAPI = dynmapAPI.getMarkerAPI();
+
+        Set<Marker> markers = markerAPI.getMarkerSets().stream()
+            .flatMap(sets -> sets.getMarkers().stream())
+            .collect(Collectors.toSet());
+
+        Optional<Marker> matchedMarker = markers.stream()
+            .filter(marker -> marker.getLabel().equals(markerName))
+            .findFirst();
+
+        if (matchedMarker.isEmpty()) {
             SendMessage(sender, details(), "指定されたマーカー名のマーカーは見つかりませんでした。");
             Optional<Marker> perhapsMarker = markers.stream()
                 .filter(marker -> marker.getLabel().equalsIgnoreCase(markerName))
@@ -159,7 +211,9 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
             return;
         }
 
-        teleportToMarker(sender, target, matchedMarker.get());
+        for (Entity entity : targets.getEntities()) {
+            teleportToMarker(sender, entity, matchedMarker.get());
+        }
     }
 
     void addMarker(CommandContext<CommandSender> context) {
@@ -216,7 +270,7 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
             .filter(m -> m.getLabel().equals(markerName))
             .findFirst();
 
-        if (!_marker.isPresent()) {
+        if (_marker.isEmpty()) {
             SendMessage(player, details(), "指定されたマーカーは見つかりませんでした。");
             return;
         }
@@ -262,7 +316,36 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
                 double distance2 = new Location(Bukkit.getWorld(e2.getWorld()), e2.getX(), e2.getY(), e2.getZ()).distance(loc);
                 return (int) (distance1 - distance2);
             });
-        if (!marker.isPresent()) {
+        if (marker.isEmpty()) {
+            SendMessage(player, details(), "ワールドにマーカーがひとつもありませんでした。");
+            return;
+        }
+        double distance = player.getLocation().distance(new Location(Bukkit.getWorld(marker.get().getWorld()), marker.get().getX(), marker.get().getY(), marker.get().getZ()));
+
+        SendMessage(player, details(), String.format("あなたから一番近い場所にあるマーカーは約%.3fブロック程度のところにある「%s」というマーカーです。", distance, marker.get().getLabel()));
+        SendMessage(player, details(), Component.text().append(
+            Component.text("/dt neartp", NamedTextColor.AQUA, TextDecoration.UNDERLINED)
+                .hoverEvent(HoverEvent.showText(Component.text("/dt neartp を実行します。")))
+                .clickEvent(ClickEvent.runCommand("/dt neartp")),
+            Component.text(" でテレポートできます。", NamedTextColor.GREEN)
+        ).build());
+    }
+
+    void getNearTpMarker(CommandContext<CommandSender> context) {
+        Player player = (Player) context.getSender();
+        Location loc = player.getLocation();
+
+        DynmapAPI dynmapAPI = getDynmapAPI();
+        MarkerAPI markerAPI = dynmapAPI.getMarkerAPI();
+
+        Optional<Marker> marker = markerAPI.getMarkerSets().stream()
+            .flatMap(sets -> sets.getMarkers().stream())
+            .filter(m -> m.getWorld().equals(player.getLocation().getWorld().getName())).min((e1, e2) -> {
+                double distance1 = new Location(Bukkit.getWorld(e1.getWorld()), e1.getX(), e1.getY(), e1.getZ()).distance(loc);
+                double distance2 = new Location(Bukkit.getWorld(e2.getWorld()), e2.getX(), e2.getY(), e2.getZ()).distance(loc);
+                return (int) (distance1 - distance2);
+            });
+        if (marker.isEmpty()) {
             SendMessage(player, details(), "ワールドにマーカーがひとつもありませんでした。");
             return;
         }
@@ -278,8 +361,7 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
         MarkerAPI markerAPI = dynmapAPI.getMarkerAPI();
 
         List<Marker> markers = markerAPI.getMarkerSets().stream()
-            .flatMap(sets -> sets.getMarkers().stream())
-            .collect(Collectors.toList());
+            .flatMap(sets -> sets.getMarkers().stream()).toList();
 
         int pageItemNum = 5;
         int skipNum = (page - 1) * pageItemNum;
@@ -331,18 +413,18 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
      *
      * @param context CommandContext
      * @param current 入力されている値
+     *
      * @return サジェストする文字列一覧
      */
     List<String> suggestMarkerNames(final CommandContext<CommandSender> context, final String current) {
-        if (!isEnabledPlugin("dynmap")) {
+        if (isDisabledPlugin("dynmap")) {
             return new ArrayList<>();
         }
         DynmapAPI dynmapAPI = getDynmapAPI();
         MarkerAPI markerAPI = dynmapAPI.getMarkerAPI();
 
         return markerAPI.getMarkerSets().stream()
-            .flatMap(a -> a.getMarkers().stream())
-            .collect(Collectors.toList()).stream()
+            .flatMap(a -> a.getMarkers().stream()).toList().stream()
             .map(GenericMarker::getLabel)
             .filter(label -> label.startsWith(current))
             .collect(Collectors.toList());
@@ -353,10 +435,11 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
      *
      * @param context CommandContext
      * @param current 入力されている値
+     *
      * @return サジェストする文字列一覧
      */
     List<String> suggestMarkerTypes(final CommandContext<CommandSender> context, final String current) {
-        if (!isEnabledPlugin("dynmap")) {
+        if (isDisabledPlugin("dynmap")) {
             return new ArrayList<>();
         }
         DynmapAPI dynmapAPI = getDynmapAPI();
@@ -373,10 +456,11 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
      *
      * @param context CommandContext
      * @param current 入力されている値
+     *
      * @return サジェストする文字列一覧
      */
     List<String> suggestMarkerIcons(final CommandContext<CommandSender> context, final String current) {
-        if (!isEnabledPlugin("dynmap")) {
+        if (isDisabledPlugin("dynmap")) {
             return new ArrayList<>();
         }
         DynmapAPI dynmapAPI = getDynmapAPI();
@@ -403,6 +487,7 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
      *
      * @param markerAPI  マーカーAPI
      * @param markerName 調べるマーカー名
+     *
      * @return 存在すればTrue
      */
     boolean isExistsMarker(MarkerAPI markerAPI, String markerName) {
@@ -411,7 +496,7 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
             .anyMatch(marker -> marker.getLabel().equals(markerName));
     }
 
-    void teleportToMarker(CommandSender sender, Player player, Marker marker) {
+    void teleportToMarker(CommandSender sender, Entity entity, Marker marker) {
         String markerName = marker.getLabel();
         World world = Bukkit.getWorld(marker.getWorld());
         if (world == null) {
@@ -423,15 +508,15 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
             // 小数点以下が指定されていない場合に0.5を足す
             loc.add(0.5f, 0f, 0.5f);
         }
-        player.teleport(loc);
+        entity.teleport(loc);
 
         // 可読性悪すぎ
         HoverEvent<?> senderHoverEvent =
-            sender == player ?
+            sender == entity ?
                 HoverEvent.showEntity(
                     Key.key("player"),
-                    player.getUniqueId(),
-                    Component.text(player.getName())) :
+                    entity.getUniqueId(),
+                    Component.text(entity.getName())) :
                 sender instanceof Player ?
                     HoverEvent.showEntity(
                         Key.key("player"),
@@ -445,13 +530,13 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
                 .hoverEvent(senderHoverEvent),
             Component.text(":", NamedTextColor.GRAY),
             Component.space(),
-            Component.text(player.getName(), NamedTextColor.GRAY, TextDecoration.ITALIC)
+            Component.text(entity.getName(), NamedTextColor.GRAY, TextDecoration.ITALIC)
                 .hoverEvent(HoverEvent.showEntity(
-                    Key.key("player"),
-                    player.getUniqueId(),
-                    Component.text(player.getName()))),
+                    entity.getType().getKey(),
+                    entity.getUniqueId(),
+                    Component.text(entity.getName()))),
             Component.space(),
-            Component.text("は"),
+            Component.text("を", NamedTextColor.GRAY),
             Component.space(),
             Component.text(markerName, NamedTextColor.GRAY, TextDecoration.ITALIC)
                 .hoverEvent(HoverEvent.showText(Component.text().append(
@@ -467,7 +552,10 @@ public class Cmd_DT extends MyMaidLibrary implements CommandPremise {
                 )))
                 .clickEvent(ClickEvent.suggestCommand(String.format("/dt %s", markerName))),
             Component.space(),
-            Component.text("にワープしました]", NamedTextColor.GRAY)
+            Component.text("にテレポートさせました]", NamedTextColor.GRAY)
         ));
+        if (MyMaidData.getServerChatChannel() != null) {
+            MyMaidData.getServerChatChannel().sendMessage("*[" + DiscordEscape(sender.getName()) + ": " + DiscordEscape(entity.getName()) + " teleported to " + markerName + "]*").queue();
+        }
     }
 }

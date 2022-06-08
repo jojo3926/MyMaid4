@@ -1,7 +1,7 @@
 /*
  * jaoLicense
  *
- * Copyright (c) 2021 jao Minecraft Server
+ * Copyright (c) 2022 jao Minecraft Server
  *
  * The following license applies to this project: jaoLicense
  *
@@ -11,18 +11,16 @@
 
 package com.jaoafa.mymaid4.command;
 
+import cloud.commandframework.ArgumentDescription;
 import cloud.commandframework.Command;
-import cloud.commandframework.arguments.standard.StringArgument;
 import cloud.commandframework.bukkit.parsers.OfflinePlayerArgument;
 import cloud.commandframework.context.CommandContext;
 import cloud.commandframework.meta.CommandMeta;
 import com.jaoafa.mymaid4.lib.CommandPremise;
 import com.jaoafa.mymaid4.lib.MyMaidCommand;
 import com.jaoafa.mymaid4.lib.MyMaidLibrary;
-import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
-import org.bukkit.SkullType;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -42,13 +40,13 @@ public class Cmd_Head extends MyMaidLibrary implements CommandPremise {
     public MyMaidCommand.Cmd register(Command.Builder<CommandSender> builder) {
         return new MyMaidCommand.Cmd(
             builder
-                .meta(CommandMeta.DESCRIPTION, "自分の頭ブロックを入手します。" )
+                .meta(CommandMeta.DESCRIPTION, "自分の頭ブロックを入手します。")
                 .senderType(Player.class)
                 .handler(this::giveMyHead)
                 .build(),
             builder
-                .meta(CommandMeta.DESCRIPTION, "指定したプレイヤーの頭ブロックを入手します。" )
-                .argument(StringArgument.newBuilder("player" ))
+                .meta(CommandMeta.DESCRIPTION, "指定したプレイヤーの頭ブロックを入手します。")
+                .argument(OfflinePlayerArgument.of("player"), ArgumentDescription.of("対象のプレイヤー"))
                 .handler(this::givePlayerHead)
                 .build()
         );
@@ -65,12 +63,12 @@ public class Cmd_Head extends MyMaidLibrary implements CommandPremise {
         ItemStack main = inv.getItemInMainHand();
 
         inv.setItemInMainHand(skull);
-        SendMessage(player, details(), "「" + name + "の頭」をメインハンドのアイテムと置きかえました。" );
+        SendMessage(player, details(), "「" + name + "の頭」をメインハンドのアイテムと置きかえました。");
 
-        if (main != null && main.getType() != Material.AIR) {
+        if (main.getType() != Material.AIR) {
             if (player.getInventory().firstEmpty() == -1) {
                 player.getLocation().getWorld().dropItem(player.getLocation(), main);
-                SendMessage(player, details(), "インベントリがいっぱいだったため、既に持っていたアイテムはあなたの足元にドロップしました。" );
+                SendMessage(player, details(), "インベントリがいっぱいだったため、既に持っていたアイテムはあなたの足元にドロップしました。");
             } else {
                 inv.addItem(main);
             }
@@ -79,21 +77,21 @@ public class Cmd_Head extends MyMaidLibrary implements CommandPremise {
 
     void givePlayerHead(CommandContext<CommandSender> context) {
         Player player = (Player) context.getSender();
-        String targetPlayer = context.getOrDefault("player", null);
+        OfflinePlayer targetPlayer = context.get("player");
         ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
         SkullMeta meta = (SkullMeta) skull.getItemMeta();
-        meta.setOwningPlayer(Bukkit.getOfflinePlayer(targetPlayer));
+        meta.setOwningPlayer(targetPlayer);
         skull.setItemMeta(meta);
         PlayerInventory inv = player.getInventory();
         ItemStack main = inv.getItemInMainHand();
 
         inv.setItemInMainHand(skull);
-        SendMessage(player, details(), "「" + targetPlayer + "の頭」をメインハンドのアイテムと置きかえました。" );
+        SendMessage(player, details(), "「" + targetPlayer.getName() + "の頭」をメインハンドのアイテムと置きかえました。");
 
-        if (main != null && main.getType() != Material.AIR) {
+        if (main.getType() != Material.AIR) {
             if (player.getInventory().firstEmpty() == -1) {
                 player.getLocation().getWorld().dropItem(player.getLocation(), main);
-                SendMessage(player, details(), "インベントリがいっぱいだったため、既に持っていたアイテムはあなたの足元にドロップしました。" );
+                SendMessage(player, details(), "インベントリがいっぱいだったため、既に持っていたアイテムはあなたの足元にドロップしました。");
             } else {
                 inv.addItem(main);
             }

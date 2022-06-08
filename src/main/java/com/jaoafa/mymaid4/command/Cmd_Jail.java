@@ -1,7 +1,7 @@
 /*
  * jaoLicense
  *
- * Copyright (c) 2021 jao Minecraft Server
+ * Copyright (c) 2022 jao Minecraft Server
  *
  * The following license applies to this project: jaoLicense
  *
@@ -11,6 +11,7 @@
 
 package com.jaoafa.mymaid4.command;
 
+import cloud.commandframework.ArgumentDescription;
 import cloud.commandframework.Command;
 import cloud.commandframework.arguments.standard.StringArgument;
 import cloud.commandframework.bukkit.parsers.OfflinePlayerArgument;
@@ -44,14 +45,14 @@ public class Cmd_Jail extends MyMaidLibrary implements CommandPremise {
             builder
                 .meta(CommandMeta.DESCRIPTION, "ターゲットをJailします。")
                 .literal("add")
-                .argument(OfflinePlayerArgument.of("player"))
+                .argument(OfflinePlayerArgument.of("player"), ArgumentDescription.of("対象のプレイヤー"))
                 .argument(StringArgument.greedy("reason"))
                 .handler(this::addJail)
                 .build(),
             builder
                 .meta(CommandMeta.DESCRIPTION, "ターゲットのJailを解除します。")
                 .literal("remove", "del", "rem")
-                .argument(OfflinePlayerArgument.of("player"))
+                .argument(OfflinePlayerArgument.of("player"), ArgumentDescription.of("対象のプレイヤー"))
                 .handler(this::removeJail)
                 .build(),
             builder
@@ -59,14 +60,14 @@ public class Cmd_Jail extends MyMaidLibrary implements CommandPremise {
                 .literal("status", "list")
                 .argument(OfflinePlayerArgument
                     .<CommandSender>newBuilder("player")
-                    .asOptional())
+                    .asOptional(), ArgumentDescription.of("詳細を表示するプレイヤー"))
                 .handler(this::getStatus)
                 .build(),
             builder
                 .meta(CommandMeta.DESCRIPTION, "遺言を記録します。")
                 .senderType(Player.class)
                 .literal("testment")
-                .argument(StringArgument.greedy("message"))
+                .argument(StringArgument.greedy("message"), ArgumentDescription.of("遺言"))
                 .handler(this::setTestment)
                 .build()
         );
@@ -82,24 +83,16 @@ public class Cmd_Jail extends MyMaidLibrary implements CommandPremise {
             return;
         }
 
-        Jail jail = new Jail(player);
+        Jail jail = Jail.getInstance(player);
         Jail.Result result = jail.addBan(sender.getName(), reason);
 
-        String message = "原因不明のエラーが発生しました。(成功しているかもしれません)";
-        switch (result) {
-            case ALREADY:
-                message = "このプレイヤーは既にJailに追加されています。";
-                break;
-            case DATABASE_NOT_ACTIVE:
-                message = "データベースがアクティブではありません。";
-                break;
-            case DATABASE_ERROR:
-                message = "データベースの操作中にエラーが発生しました。";
-                break;
-            case UNKNOWN_ERROR:
-                message = "何らかのエラーが発生しました。";
-                break;
-        }
+        String message = switch (result) {
+            case ALREADY -> "このプレイヤーは既にJailに追加されています。";
+            case DATABASE_NOT_ACTIVE -> "データベースがアクティブではありません。";
+            case DATABASE_ERROR -> "データベースの操作中にエラーが発生しました。";
+            case UNKNOWN_ERROR -> "何らかのエラーが発生しました。";
+            default -> "原因不明のエラーが発生しました。(成功しているかもしれません)";
+        };
 
         SendMessage(sender, details(), String.format("プレイヤー「%s」のJail追加に%sしました。",
             player.getName(),
@@ -118,24 +111,16 @@ public class Cmd_Jail extends MyMaidLibrary implements CommandPremise {
             return;
         }
 
-        Jail jail = new Jail(player);
+        Jail jail = Jail.getInstance(player);
         Jail.Result result = jail.removeBan(sender.getName());
 
-        String message = "原因不明のエラーが発生しました。(成功しているかもしれません)";
-        switch (result) {
-            case ALREADY:
-                message = "このプレイヤーはJailされていません。";
-                break;
-            case DATABASE_NOT_ACTIVE:
-                message = "データベースがアクティブではありません。";
-                break;
-            case DATABASE_ERROR:
-                message = "データベースの操作中にエラーが発生しました。";
-                break;
-            case UNKNOWN_ERROR:
-                message = "何らかのエラーが発生しました。";
-                break;
-        }
+        String message = switch (result) {
+            case ALREADY -> "このプレイヤーはJailされていません。";
+            case DATABASE_NOT_ACTIVE -> "データベースがアクティブではありません。";
+            case DATABASE_ERROR -> "データベースの操作中にエラーが発生しました。";
+            case UNKNOWN_ERROR -> "何らかのエラーが発生しました。";
+            default -> "原因不明のエラーが発生しました。(成功しているかもしれません)";
+        };
 
         SendMessage(sender, details(), String.format("プレイヤー「%s」のJail解除に%sしました。",
             player.getName(),
@@ -162,7 +147,7 @@ public class Cmd_Jail extends MyMaidLibrary implements CommandPremise {
     }
 
     void sendJailedList(CommandSender sender) {
-        List<Jail.JailData> jails = Jail.getActiveJails();
+        List<OfflinePlayer> jails = Jail.getBannedPlayers();
         if (jails == null) {
             SendMessage(sender, details(), "Jail情報を取得できませんでした。時間をおいてもう一度お試しください。");
             return;
@@ -170,18 +155,19 @@ public class Cmd_Jail extends MyMaidLibrary implements CommandPremise {
 
         SendMessage(sender, details(), "現在、" + jails.size() + "名のプレイヤーがJailされています。");
         int nameWidth = jails.stream()
-            .filter(jail -> jail.getPlayerName() != null)
-            .max(Comparator.comparingInt(i -> i.getPlayerName().length()))
-            .filter(jail -> jail.getPlayerName() != null) // なんでこれが必要なのか…
-            .map(jail -> jail.getPlayerName().length())
+            .filter(jail -> jail.getName() != null)
+            .max(Comparator.comparingInt(i -> i.getName().length()))
+            .filter(jail -> jail.getName() != null) // なんでこれが必要なのか…
+            .map(jail -> jail.getName().length())
             .orElse(4);
-        for (Jail.JailData jail : jails) {
+        jails.forEach(p -> {
+            Jail jail = Jail.getInstance(p);
             String displayName = "NULL";
-            if (jail.getPlayerName() != null) {
-                displayName = jail.getPlayerName();
+            if (p.getName() != null) {
+                displayName = p.getName();
             }
             SendMessage(sender, details(), formatText(displayName, nameWidth) + " " + jail.getReason());
-        }
+        });
     }
 
     String formatText(String str, int width) {
@@ -189,18 +175,17 @@ public class Cmd_Jail extends MyMaidLibrary implements CommandPremise {
     }
 
     void sendPlayerStatus(CommandSender sender, OfflinePlayer player) {
-        Jail jail = new Jail(player);
+        Jail jail = Jail.getInstance(player);
 
-        if (!jail.isBanned()) {
+        if (!jail.isStatus()) {
             SendMessage(sender, details(), "指定されたプレイヤーはJailされていないようです。");
             return;
         }
 
-        Jail.JailData jailData = jail.getJailData();
-        int jailId = jailData.getJailId();
-        String banned_by = jailData.getBannedBy();
-        String reason = jailData.getReason();
-        Timestamp created_at = jailData.getCreatedAt();
+        int jailId = jail.getJailId();
+        String banned_by = jail.getBannedBy();
+        String reason = jail.getReason();
+        Timestamp created_at = jail.getCreatedAt();
 
         SendMessage(sender, details(), String.format("プレイヤー「%s」は現在Jailされています。", player.getName()));
         SendMessage(sender, details(), String.format("JailId: %d", jailId));
@@ -209,36 +194,27 @@ public class Cmd_Jail extends MyMaidLibrary implements CommandPremise {
         SendMessage(sender, details(), "Jail日時: " + sdfFormat(created_at));
     }
 
+    // ここに何らかの修正を加える場合、Cmd_Testmentにも修正を適用するのを忘れないでください。
     void setTestment(CommandContext<CommandSender> context) {
         Player player = (Player) context.getSender();
         String testment = context.get("message");
 
-        Jail jail = new Jail(player);
+        Jail jail = Jail.getInstance(player);
 
-        if (!jail.isBanned()) {
+        if (!jail.isStatus()) {
             SendMessage(player, details(), "あなたはJailされていないようです。");
             return;
         }
 
         Jail.Result result = jail.setTestment(testment);
-        String message = "原因不明のエラーが発生しました。(成功しているかもしれません)";
-        switch (result) {
-            case ALREADY:
-                message = "既にあなたは遺言を書いています。";
-                break;
-            case NOT_BANNED:
-                message = "あなたはJailされていないようです。";
-                break;
-            case DATABASE_NOT_ACTIVE:
-                message = "データベースがアクティブではありません。";
-                break;
-            case DATABASE_ERROR:
-                message = "データベースの操作中にエラーが発生しました。";
-                break;
-            case UNKNOWN_ERROR:
-                message = "何らかのエラーが発生しました。";
-                break;
-        }
+        String message = switch (result) {
+            case ALREADY -> "既にあなたは遺言を書いています。";
+            case NOT_BANNED -> "あなたはJailされていないようです。";
+            case DATABASE_NOT_ACTIVE -> "データベースがアクティブではありません。";
+            case DATABASE_ERROR -> "データベースの操作中にエラーが発生しました。";
+            case UNKNOWN_ERROR -> "何らかのエラーが発生しました。";
+            default -> "原因不明のエラーが発生しました。(成功しているかもしれません)";
+        };
 
         SendMessage(player, details(), String.format("遺言の記述に%sしました。",
             result == Jail.Result.SUCCESS ? "成功" : "失敗"));

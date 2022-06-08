@@ -1,7 +1,7 @@
 /*
  * jaoLicense
  *
- * Copyright (c) 2021 jao Minecraft Server
+ * Copyright (c) 2022 jao Minecraft Server
  *
  * The following license applies to this project: jaoLicense
  *
@@ -14,6 +14,7 @@ package com.jaoafa.mymaid4.event;
 import com.jaoafa.jaosuperachievement2.api.Achievementjao;
 import com.jaoafa.jaosuperachievement2.lib.Achievement;
 import com.jaoafa.mymaid4.Main;
+import com.jaoafa.mymaid4.lib.EventPremise;
 import com.jaoafa.mymaid4.lib.Jail;
 import com.jaoafa.mymaid4.lib.MyMaidData;
 import com.jaoafa.mymaid4.lib.MyMaidLibrary;
@@ -25,6 +26,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
@@ -32,10 +34,16 @@ import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
 import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.player.*;
-import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
 import org.bukkit.scheduler.BukkitRunnable;
 
-public class Event_Jail implements Listener {
+import java.util.UUID;
+
+public class Event_Jail implements Listener, EventPremise {
+    @Override
+    public String description() {
+        return "Jailに関する各種処理を行います。";
+    }
+
     @EventHandler(priority = EventPriority.MONITOR,
                   ignoreCancelled = true)
     public void OnEvent_LoginJailCheck(PlayerJoinEvent event) {
@@ -47,11 +55,11 @@ public class Event_Jail implements Listener {
 
         new BukkitRunnable() {
             public void run() {
-                Jail jail = new Jail(player);
-                if (!jail.isBanned()) {
+                Jail jail = Jail.getInstance(player);
+                if (!jail.isStatus()) {
                     return;
                 }
-                String reason = jail.getJailData().getReason();
+                String reason = jail.getReason();
                 if (reason == null) {
                     return;
                 }
@@ -79,19 +87,20 @@ public class Event_Jail implements Listener {
 
         Location to = event.getTo();
         Player player = event.getPlayer();
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
         }
         World world = Bukkit.getServer().getWorld("Jao_Afa");
         if (world == null) {
             return;
         }
-        Location prison = new Location(world, 2856, 69, 2888);
+        Location prison = MyMaidData.paradiseLocation;
         if (!player.getLocation().getWorld().getUID().equals(world.getUID())) {
             player.sendMessage("[Jail] " + ChatColor.GREEN + "あなたは南の楽園から出られません！");
             // ワールド違い
-            if (!player.teleport(prison, TeleportCause.PLUGIN)) {
+
+            if (!MyMaidLibrary.teleportToParadise(player)) {
                 // 失敗時
                 Location oldBed = player.getBedSpawnLocation();
                 player.setBedSpawnLocation(prison, true);
@@ -101,10 +110,15 @@ public class Event_Jail implements Listener {
             return;
         }
         double distance = prison.distance(to);
-        if (distance >= 40D) {
-            player.sendMessage("[Jail] " + ChatColor.GREEN + "あなたは南の楽園から出られません！");
-            if (distance >= 50D) {
-                if (!player.teleport(prison, TeleportCause.PLUGIN)) {
+        if (distance >= 65D || to.getBlockY() < 65) {
+            // 中央からの距離が65ブロック or y値が65未満
+            UUID uuid = player.getUniqueId();
+            if (!Jail.hasWarned.containsKey(uuid) || !Jail.hasWarned.get(uuid))
+                player.sendMessage("[Jail] " + ChatColor.GREEN + "あなたは南の楽園から出られません！");
+            Jail.hasWarned.put(uuid, true);
+
+            if (distance >= 70D) {
+                if (!MyMaidLibrary.teleportToParadise(player)) {
                     // 失敗時
                     Location oldBed = player.getBedSpawnLocation();
                     player.setBedSpawnLocation(prison, true);
@@ -120,13 +134,12 @@ public class Event_Jail implements Listener {
     @EventHandler
     public void onPlayerRespawnEvent(PlayerRespawnEvent event) {
         Player player = event.getPlayer();
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
         }
-        World World = Bukkit.getServer().getWorld("Jao_Afa");
-        Location prison = new Location(World, 2856, 69, 2888);
-        event.setRespawnLocation(prison);
+
+        event.setRespawnLocation(MyMaidData.paradiseLocation);
     }
 
     @EventHandler
@@ -135,8 +148,8 @@ public class Event_Jail implements Listener {
         if (!player.getLocation().getWorld().getName().equalsIgnoreCase("Jao_Afa")) {
             return;
         }
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
         }
         event.setCancelled(true);
@@ -147,8 +160,8 @@ public class Event_Jail implements Listener {
     @EventHandler
     public void onBlockBreakEvent(BlockBreakEvent event) {
         Player player = event.getPlayer();
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
         }
         event.setCancelled(true);
@@ -162,8 +175,8 @@ public class Event_Jail implements Listener {
         if (player == null) {
             return;
         }
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
         }
         event.setCancelled(true);
@@ -174,8 +187,8 @@ public class Event_Jail implements Listener {
     @EventHandler
     public void onPlayerBucketEmptyEvent(PlayerBucketEmptyEvent event) {
         Player player = event.getPlayer();
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
         }
         event.setCancelled(true);
@@ -186,8 +199,8 @@ public class Event_Jail implements Listener {
     @EventHandler
     public void onPlayerBucketFillEvent(PlayerBucketFillEvent event) {
         Player player = event.getPlayer();
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
         }
         event.setCancelled(true);
@@ -197,12 +210,11 @@ public class Event_Jail implements Listener {
 
     @EventHandler
     public void onPlayerPickupItemEvent(EntityPickupItemEvent event) {
-        if (!(event.getEntity() instanceof Player)) {
+        if (!(event.getEntity() instanceof Player player)) {
             return;
         }
-        Player player = (Player) event.getEntity();
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
         }
         event.setCancelled(true);
@@ -211,8 +223,8 @@ public class Event_Jail implements Listener {
     @EventHandler
     public void onPlayerDropItemEvent(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
         }
         event.setCancelled(true);
@@ -221,8 +233,8 @@ public class Event_Jail implements Listener {
     @EventHandler
     public void onPlayerCommandPreprocessEvent(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
         }
         String command = event.getMessage();
@@ -244,12 +256,11 @@ public class Event_Jail implements Listener {
 
     @EventHandler
     public void onProjectileLaunchEvent(ProjectileLaunchEvent event) {
-        if (!(event.getEntity().getShooter() instanceof Player)) {
+        if (!(event.getEntity().getShooter() instanceof Player player)) {
             return;
         }
-        Player player = (Player) event.getEntity().getShooter();
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
         }
         event.setCancelled(true);
@@ -257,13 +268,28 @@ public class Event_Jail implements Listener {
 
     @EventHandler
     public void onPotionSplashEvent(PotionSplashEvent event) {
-        if (!(event.getEntity().getShooter() instanceof Player)) {
+        if (!(event.getEntity().getShooter() instanceof Player player)) {
             return;
         }
-        Player player = (Player) event.getEntity().getShooter();
-        Jail jail = new Jail(player);
-        if (!jail.isBanned()) { // Jailされてる
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
             return;
+        }
+        event.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        Player player = event.getPlayer();
+        Jail jail = Jail.getInstance(player);
+        if (!jail.isStatus()) { // Jailされてる
+            return;
+        }
+        if (event.getAction() == Action.LEFT_CLICK_AIR || event.getAction() == Action.RIGHT_CLICK_AIR) {
+            return; // 空気に対するアクションは無視
+        }
+        if (Jail.actionWhitelist.stream().noneMatch(action -> action.action() == event.getAction() && action.checker().check(event))) {
+            return; // アクションがホワイトリストにない場合は無視
         }
         event.setCancelled(true);
     }
@@ -273,23 +299,21 @@ public class Event_Jail implements Listener {
         Player player = event.getPlayer();
         new BukkitRunnable() {
             public void run() {
-                Jail jail = new Jail(player);
-                jail.getJailData().fetchData(false);
+                Jail.getInstance(player, true);
             }
         }.runTaskAsynchronously(Main.getJavaPlugin());
     }
 
     @EventHandler
-    public void onQuitClearCache(PlayerQuitEvent event) {
+    public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
-        Jail jail = new Jail(player);
-        if (jail.isBanned()) { // Jailされてる
-            Achievementjao.getAchievementAsync(player, Achievement.JAILBREAKER); // No.69 脱獄者だ！
-        }
         new BukkitRunnable() {
             public void run() {
-                Jail jail = new Jail(player);
-                jail.getJailData().fetchData(false);
+                Jail jail = Jail.getInstance(player);
+                if (!jail.isStatus()) {
+                    return;
+                }
+                Achievementjao.getAchievementAsync(player, Achievement.JAILBREAKER);
             }
         }.runTaskAsynchronously(Main.getJavaPlugin());
     }

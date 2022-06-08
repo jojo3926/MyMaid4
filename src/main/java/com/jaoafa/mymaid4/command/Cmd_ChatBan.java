@@ -1,7 +1,7 @@
 /*
  * jaoLicense
  *
- * Copyright (c) 2021 jao Minecraft Server
+ * Copyright (c) 2022 jao Minecraft Server
  *
  * The following license applies to this project: jaoLicense
  *
@@ -11,13 +11,14 @@
 
 package com.jaoafa.mymaid4.command;
 
+import cloud.commandframework.ArgumentDescription;
 import cloud.commandframework.Command;
 import cloud.commandframework.arguments.standard.StringArgument;
 import cloud.commandframework.bukkit.parsers.OfflinePlayerArgument;
 import cloud.commandframework.context.CommandContext;
 import cloud.commandframework.meta.CommandMeta;
-import com.jaoafa.mymaid4.lib.CommandPremise;
 import com.jaoafa.mymaid4.lib.ChatBan;
+import com.jaoafa.mymaid4.lib.CommandPremise;
 import com.jaoafa.mymaid4.lib.MyMaidCommand;
 import com.jaoafa.mymaid4.lib.MyMaidLibrary;
 import org.apache.commons.lang.StringUtils;
@@ -44,22 +45,22 @@ public class Cmd_ChatBan extends MyMaidLibrary implements CommandPremise {
             builder
                 .meta(CommandMeta.DESCRIPTION, "ターゲットをChatBanします。")
                 .literal("add")
-                .argument(OfflinePlayerArgument.of("player"))
-                .argument(StringArgument.greedy("reason"))
+                .argument(OfflinePlayerArgument.of("player"), ArgumentDescription.of("対象のプレイヤー"))
+                .argument(StringArgument.greedy("reason"), ArgumentDescription.of("理由"))
                 .handler(this::addChatBan)
                 .build(),
             builder
                 .meta(CommandMeta.DESCRIPTION, "ターゲットのChatBanを解除します。")
                 .literal("remove", "del", "rem")
-                .argument(OfflinePlayerArgument.of("player"))
+                .argument(OfflinePlayerArgument.of("player"), ArgumentDescription.of("対象のプレイヤー"))
                 .handler(this::removeChatBan)
                 .build(),
             builder
-                .meta(CommandMeta.DESCRIPTION, "ChatBan一覧を表示します。")
+                .meta(CommandMeta.DESCRIPTION, "ChatBan一覧もしくは詳細を表示します。")
                 .literal("status", "list")
                 .argument(OfflinePlayerArgument
                     .<CommandSender>newBuilder("player")
-                    .asOptional())
+                    .asOptional(), ArgumentDescription.of("詳細を表示するプレイヤー"))
                 .handler(this::getStatus)
                 .build()
         );
@@ -75,24 +76,16 @@ public class Cmd_ChatBan extends MyMaidLibrary implements CommandPremise {
             return;
         }
 
-        ChatBan chatban = new ChatBan(player);
-        ChatBan.Result result = chatban.addBan(sender.getName(), reason);
+        ChatBan chatBan = ChatBan.getInstance(player);
+        ChatBan.Result result = chatBan.addBan(sender.getName(), reason);
 
-        String message = "原因不明のエラーが発生しました。(成功しているかもしれません)";
-        switch (result) {
-            case ALREADY:
-                message = "このプレイヤーは既にChatBanに追加されています。";
-                break;
-            case DATABASE_NOT_ACTIVE:
-                message = "データベースがアクティブではありません。";
-                break;
-            case DATABASE_ERROR:
-                message = "データベースの操作中にエラーが発生しました。";
-                break;
-            case UNKNOWN_ERROR:
-                message = "何らかのエラーが発生しました。";
-                break;
-        }
+        String message = switch (result) {
+            case ALREADY -> "このプレイヤーは既にChatBanに追加されています。";
+            case DATABASE_NOT_ACTIVE -> "データベースがアクティブではありません。";
+            case DATABASE_ERROR -> "データベースの操作中にエラーが発生しました。";
+            case UNKNOWN_ERROR -> "何らかのエラーが発生しました。";
+            default -> "原因不明のエラーが発生しました。(成功しているかもしれません)";
+        };
 
         SendMessage(sender, details(), String.format("プレイヤー「%s」のChatBan追加に%sしました。",
             player.getName(),
@@ -111,24 +104,16 @@ public class Cmd_ChatBan extends MyMaidLibrary implements CommandPremise {
             return;
         }
 
-        ChatBan chatban = new ChatBan(player);
-        ChatBan.Result result = chatban.removeBan(sender.getName());
+        ChatBan chatBan = ChatBan.getInstance(player);
+        ChatBan.Result result = chatBan.removeBan(sender.getName());
 
-        String message = "原因不明のエラーが発生しました。(成功しているかもしれません)";
-        switch (result) {
-            case ALREADY:
-                message = "このプレイヤーはChatBanされていません。";
-                break;
-            case DATABASE_NOT_ACTIVE:
-                message = "データベースがアクティブではありません。";
-                break;
-            case DATABASE_ERROR:
-                message = "データベースの操作中にエラーが発生しました。";
-                break;
-            case UNKNOWN_ERROR:
-                message = "何らかのエラーが発生しました。";
-                break;
-        }
+        String message = switch (result) {
+            case ALREADY -> "このプレイヤーはChatBanされていません。";
+            case DATABASE_NOT_ACTIVE -> "データベースがアクティブではありません。";
+            case DATABASE_ERROR -> "データベースの操作中にエラーが発生しました。";
+            case UNKNOWN_ERROR -> "何らかのエラーが発生しました。";
+            default -> "原因不明のエラーが発生しました。(成功しているかもしれません)";
+        };
 
         SendMessage(sender, details(), String.format("プレイヤー「%s」のChatBan解除に%sしました。",
             player.getName(),
@@ -155,7 +140,7 @@ public class Cmd_ChatBan extends MyMaidLibrary implements CommandPremise {
     }
 
     void sendChatBanedList(CommandSender sender) {
-        List<ChatBan.ChatBanData> chatbans = ChatBan.getActiveChatBans();
+        List<OfflinePlayer> chatbans = ChatBan.getBannedPlayers();
         if (chatbans == null) {
             SendMessage(sender, details(), "ChatBan情報を取得できませんでした。時間をおいてもう一度お試しください。");
             return;
@@ -163,18 +148,19 @@ public class Cmd_ChatBan extends MyMaidLibrary implements CommandPremise {
 
         SendMessage(sender, details(), "現在、" + chatbans.size() + "名のプレイヤーがChatBanされています。");
         int nameWidth = chatbans.stream()
-            .filter(chatban -> chatban.getPlayerName() != null)
-            .max(Comparator.comparingInt(i -> i.getPlayerName().length()))
-            .filter(chatban -> chatban.getPlayerName() != null) // なんでこれが必要なのか…
-            .map(chatban -> chatban.getPlayerName().length())
+            .filter(jail -> jail.getName() != null)
+            .max(Comparator.comparingInt(i -> i.getName().length()))
+            .filter(jail -> jail.getName() != null) // なんでこれが必要なのか…
+            .map(jail -> jail.getName().length())
             .orElse(4);
-        for (ChatBan.ChatBanData chatban : chatbans) {
+        chatbans.forEach(p -> {
+            ChatBan jail = ChatBan.getInstance(p);
             String displayName = "NULL";
-            if (chatban.getPlayerName() != null) {
-                displayName = chatban.getPlayerName();
+            if (p.getName() != null) {
+                displayName = p.getName();
             }
-            SendMessage(sender, details(), formatText(displayName, nameWidth) + " " + chatban.getReason());
-        }
+            SendMessage(sender, details(), formatText(displayName, nameWidth) + " " + jail.getReason());
+        });
     }
 
     String formatText(String str, int width) {
@@ -182,18 +168,17 @@ public class Cmd_ChatBan extends MyMaidLibrary implements CommandPremise {
     }
 
     void sendPlayerStatus(CommandSender sender, OfflinePlayer player) {
-        ChatBan chatban = new ChatBan(player);
+        ChatBan chatBan = ChatBan.getInstance(player);
 
-        if (!chatban.isBanned()) {
+        if (!chatBan.isStatus()) {
             SendMessage(sender, details(), "指定されたプレイヤーはChatBanされていないようです。");
             return;
         }
 
-        ChatBan.ChatBanData chatbanData = chatban.getChatBanData();
-        int chatbanId = chatbanData.getChatBanId();
-        String banned_by = chatbanData.getBannedBy();
-        String reason = chatbanData.getReason();
-        Timestamp created_at = chatbanData.getCreatedAt();
+        int chatbanId = chatBan.getChatBanId();
+        String banned_by = chatBan.getBannedBy();
+        String reason = chatBan.getReason();
+        Timestamp created_at = chatBan.getCreatedAt();
 
         SendMessage(sender, details(), String.format("プレイヤー「%s」は現在ChatBanされています。", player.getName()));
         SendMessage(sender, details(), String.format("ChatBanId: %d", chatbanId));

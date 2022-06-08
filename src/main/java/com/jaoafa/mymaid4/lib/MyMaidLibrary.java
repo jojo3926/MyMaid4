@@ -1,7 +1,7 @@
 /*
  * jaoLicense
  *
- * Copyright (c) 2021 jao Minecraft Server
+ * Copyright (c) 2022 jao Minecraft Server
  *
  * The following license applies to this project: jaoLicense
  *
@@ -17,16 +17,32 @@ import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.TextChannel;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
+import net.kyori.adventure.text.TextReplacementConfig;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.Style;
+import net.kyori.adventure.text.format.TextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.model.group.Group;
 import net.luckperms.api.model.user.User;
 import org.bukkit.*;
+import org.bukkit.block.data.type.Sign;
+import org.bukkit.block.data.type.WallSign;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
+import org.bukkit.util.Vector;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.Color;
 import java.io.ByteArrayInputStream;
@@ -39,6 +55,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
+import java.util.logging.Level;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -47,6 +64,11 @@ import java.util.stream.Collectors;
  * MyMaid全体で利用されるスタティックメソッドをまとめたライブラリクラス
  */
 public class MyMaidLibrary {
+
+    // https://github.com/ErdbeerbaerLP/DiscordIntegration-Core/blob/564b32d29605322f927853ee62a6af938a0af7d3/src/main/java/de/erdbeerbaerlp/dcintegration/common/util/MessageUtils.java#L31-L35
+    static final Pattern URL_PATTERN = Pattern.compile(
+        "([a-z0-9]{2,}://(?:(?:[0-9]{1,3}\\.){3}[0-9]{1,3}|[-\\w_]+\\.[a-z]{2,}?)(?::[0-9]{1,5})?.*?(?=[!\"\u00A7 \n]|$))",
+        Pattern.CASE_INSENSITIVE);
 
     /**
      * CommandSenderに対してメッセージを送信します。
@@ -64,27 +86,16 @@ public class MyMaidLibrary {
     }
 
     /**
-     * CommandSenderに対してメッセージを送信します。
-     *
-     * @param sender    CommandSender
-     * @param detail    MyMaidCommand.Detail
-     * @param component メッセージComponent
-     */
-    public static void SendMessage(CommandSender sender, MyMaidCommand.Detail detail, Component component) {
-        sender.sendMessage(Component.text().append(
-            Component.text("[" + detail.getName().toUpperCase() + "]"),
-            Component.space(),
-            component.replaceText(builder -> builder.match("\n").replacement("\n" + "[" + detail.getName().toUpperCase() + "] "))
-        ).build());
-    }
-
-    /**
      * エラーをDiscordのreportチャンネルへ報告します。
      *
      * @param e Throwable
      */
     public static void reportError(Class<?> clazz, Throwable e) {
-        e.printStackTrace();
+        Main.getMyMaidLogger().log(Level.WARNING, e.getMessage(), e);
+
+        if (Main.getMyMaidConfig().isDevelopmentServer()) {
+            return;
+        }
 
         TextChannel reportChannel = MyMaidData.getReportChannel();
         if (reportChannel == null) {
@@ -105,8 +116,12 @@ public class MyMaidLibrary {
             .setColor(Color.RED)
             .setFooter(String.format("MyMaid4 %s", Main.getJavaPlugin().getDescription().getVersion()))
             .build();
-        reportChannel.sendMessage(embed).queue();
+        reportChannel.sendMessageEmbeds(embed).queue();
         reportChannel.sendFile(is, "stacktrace.txt").queue();
+
+        if (Main.getRollbar() != null && !Main.getMyMaidConfig().isDevelopmentServer()) {
+            Main.getRollbar().critical(e, "Class: " + clazz.getName());
+        }
     }
 
     /**
@@ -129,7 +144,7 @@ public class MyMaidLibrary {
      *
      * @return フォーマットされた結果文字列
      */
-    private static String sdfTimeFormat(Date date) {
+    protected static String sdfTimeFormat(Date date) {
         SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss");
         return sdf.format(date);
     }
@@ -158,6 +173,9 @@ public class MyMaidLibrary {
      * @return メイン権限グループ名
      */
     public static String getPermissionMainGroup(OfflinePlayer player) {
+        if (!Bukkit.getPluginManager().isPluginEnabled("LuckPerms")) {
+            return null;
+        }
         LuckPerms LPApi = LuckPermsProvider.get();
         User LP_Player = LPApi.getUserManager().getUser(player.getUniqueId());
         if (LP_Player == null) {
@@ -172,41 +190,52 @@ public class MyMaidLibrary {
     /**
      * Admin・Moderatorにメッセージを送信します。
      *
-     * @param str 送信するメッセージ文字列
+     * @param component 送信するメッセージコンポーネント
      */
-    public static void sendAM(String str) {
+    public static void sendAM(Component component) {
         for (Player p : Bukkit.getServer().getOnlinePlayers()) {
-            String group = getPermissionMainGroup(p);
             if (!isAM(p)) continue;
             if (MyMaidData.getTempMuting().contains(p)) continue;
-            p.sendMessage(str);
+            p.sendMessage(component);
         }
     }
 
     /**
      * Admin・Moderator・Regularにメッセージを送信します。
      *
-     * @param str 送信するメッセージ文字列
+     * @param component 送信するメッセージコンポーネント
      */
-    public static void sendAMR(String str) {
+    public static void sendAMR(Component component) {
         for (Player p : Bukkit.getServer().getOnlinePlayers()) {
-            String group = getPermissionMainGroup(p);
             if (!isAMR(p)) continue;
             if (MyMaidData.getTempMuting().contains(p)) continue;
-            p.sendMessage(str);
+            p.sendMessage(component);
         }
     }
 
     /**
      * Admin・Moderator・Regular・Verifiedにメッセージを送信します。
      *
-     * @param str 送信するメッセージ文字列
+     * @param component 送信するメッセージコンポーネント
      */
-    public static void sendAMRV(String str) {
+    public static void sendAMRV(Component component) {
         for (Player p : Bukkit.getServer().getOnlinePlayers()) {
             if (!isAMRV(p)) continue;
             if (MyMaidData.getTempMuting().contains(p)) continue;
-            p.sendMessage(str);
+            p.sendMessage(component);
+        }
+    }
+
+    /**
+     * Verified・Defaultにメッセージを送信します。
+     *
+     * @param component 送信するメッセージコンポーネント
+     */
+    public static void sendVD(Component component) {
+        for (Player p : Bukkit.getServer().getOnlinePlayers()) {
+            if (!isD(p) && !isV(p)) continue;
+            if (MyMaidData.getTempMuting().contains(p)) continue;
+            p.sendMessage(component);
         }
     }
 
@@ -251,7 +280,40 @@ public class MyMaidLibrary {
     protected static boolean isAMRV(OfflinePlayer player) {
         String group = getPermissionMainGroup(player);
         if (group == null) return false;
-        return isAMR(player) || group.equalsIgnoreCase("Verified");
+        return isAMR(player) || isV(player);
+    }
+
+    /**
+     * プレイヤーがRegularであるかを判定します。
+     *
+     * @param player 判定するプレイヤー
+     */
+    protected static boolean isR(OfflinePlayer player) {
+        String group = getPermissionMainGroup(player);
+        if (group == null) return false;
+        return group.equalsIgnoreCase("Regular");
+    }
+
+    /**
+     * プレイヤーがVerifiedであるかを判定します。
+     *
+     * @param player 判定するプレイヤー
+     */
+    protected static boolean isV(OfflinePlayer player) {
+        String group = getPermissionMainGroup(player);
+        if (group == null) return false;
+        return group.equalsIgnoreCase("Verified");
+    }
+
+    /**
+     * プレイヤーがDefaultであるかを判定します。
+     *
+     * @param player 判定するプレイヤー
+     */
+    protected static boolean isD(OfflinePlayer player) {
+        String group = getPermissionMainGroup(player);
+        if (group == null) return false;
+        return group.equalsIgnoreCase("Default");
     }
 
     /**
@@ -339,13 +401,64 @@ public class MyMaidLibrary {
      * @param name  プレイヤー名
      * @param text  テキスト
      */
-    public static void chatFake(ChatColor color, String name, String text) {
-        // TODO Componentに修正する
-        Bukkit.broadcastMessage(ChatColor.GRAY + "[" + sdfTimeFormat(new Date()) + "]" + color + "■" + ChatColor.WHITE + name + ": " + text);
-        if (MyMaidData.getServerChatChannel() != null)
+    public static void chatFake(TextColor color, String name, String text) {
+        chatFake(color, name, text, true);
+    }
+
+    /**
+     * フェイクのチャットを送信します。
+     *
+     * @param color         四角色
+     * @param name          プレイヤー名
+     * @param text          テキスト
+     * @param sendToDiscord Discordにも送信するか
+     */
+    public static void chatFake(TextColor color, String name, String text, boolean sendToDiscord) {
+        chatFake(color, name, Component.text(text), sendToDiscord);
+    }
+
+    /**
+     * フェイクのチャットを送信します。
+     *
+     * @param color         四角色
+     * @param name          プレイヤー名
+     * @param component     テキスト
+     * @param sendToDiscord Discordにも送信するか
+     */
+    public static void chatFake(TextColor color, String name, Component component, boolean sendToDiscord) {
+        Bukkit.getServer().sendMessage(Component.text().append(
+            Component.text("[" + sdfTimeFormat(new Date()) + "]", NamedTextColor.GRAY),
+            Component.text("■", color),
+            Component.text(name, NamedTextColor.WHITE),
+            Component.text(":"),
+            Component.space(),
+            component
+        ));
+        String text = PlainTextComponentSerializer.plainText().serialize(component);
+        if (sendToDiscord && MyMaidData.getServerChatChannel() != null)
             MyMaidData.getServerChatChannel()
                 .sendMessage("**" + DiscordEscape(name) + "**: " + DiscordEscape(ChatColor.stripColor(text)))
                 .queue();
+    }
+
+    /**
+     * フェイクのチャットを取得します。
+     *
+     * @param color 四角色
+     * @param name  プレイヤー名
+     * @param text  テキスト
+     *
+     * @return TextComponent
+     */
+    public static TextComponent getChatFake(NamedTextColor color, String name, String text) {
+        return Component.text().append(
+            Component.text("[" + sdfTimeFormat(new Date()) + "]", NamedTextColor.GRAY),
+            Component.text("■", color),
+            Component.text(name, NamedTextColor.WHITE),
+            Component.text(":"),
+            Component.space(),
+            Component.text(text)
+        ).build();
     }
 
     /**
@@ -381,12 +494,166 @@ public class MyMaidLibrary {
     }
 
     /**
+     * ワールド名のサジェスト
+     *
+     * @param context CommandContext
+     * @param current current String
+     *
+     * @return 該当するワールド名
+     */
+    public static List<String> suggestWorldNames(final CommandContext<CommandSender> context, final String current) {
+        return Bukkit.getServer().getWorlds().stream()
+            .map(World::getName)
+            .filter(s -> s.toLowerCase().startsWith(current.toLowerCase()))
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * スパムかどうかチェックを行い、状態に応じてJailします
+     *
+     * @param player [player's name]
+     */
+    public static void checkSpam(Player player) {
+        if (MyMaidData.getSpamCount(player.getUniqueId()) == null || MyMaidData.getSpamTime(player.getUniqueId()) == null) {
+            MyMaidData.setSpamCount(player.getUniqueId(), 1);
+            MyMaidData.setSpamTime(player.getUniqueId(), System.currentTimeMillis());
+            return;
+        }
+        int count = MyMaidData.getSpamCount(player.getUniqueId());
+        long time = MyMaidData.getSpamTime(player.getUniqueId());
+
+        if (System.currentTimeMillis() - time > 180000) {
+            //3分
+            MyMaidData.setSpamCount(player.getUniqueId(), 1);
+            MyMaidData.setSpamTime(player.getUniqueId(), System.currentTimeMillis());
+            return;
+        }
+
+        if (count == 2) {
+            Jail jail = Jail.getInstance(player);
+            if (jail.isStatus()) {
+                return;
+            }
+            jail.addBan("jaotan", "迷惑コマンドを過去3分間に3回以上実行したため");
+            return;
+        } else if (count == 1) {
+            player.sendMessage(String.format("[AntiProblemCommand] %s短時間に複数回にわたる迷惑コマンドが実行された場合、処罰対象となる場合があります。ご注意ください。", ChatColor.GREEN));
+
+        } else {
+            player.sendMessage(String.format("[AntiProblemCommand] %sあなたが実行したコマンドは迷惑コマンドとされています。複数回実行すると、迷惑行為として処罰対象となる場合がございます。", ChatColor.GREEN));
+        }
+        MyMaidData.setSpamCount(player.getUniqueId(), count + 1);
+        MyMaidData.setSpamTime(player.getUniqueId(), System.currentTimeMillis());
+    }
+
+    public static void debug(String message) {
+        if (!Main.getMyMaidConfig().isDevelopmentServer()) {
+            return;
+        }
+        Main.getMyMaidLogger().info("DEBUG -> %s".formatted(message));
+    }
+
+    public static NamedTextColor getNamedTextColor(String color) {
+        return switch (color.toUpperCase()) {
+            case "BLACK" -> NamedTextColor.BLACK;
+            case "DARK_BLUE" -> NamedTextColor.DARK_BLUE;
+            case "DARK_GREEN" -> NamedTextColor.DARK_GREEN;
+            case "DARK_AQUA" -> NamedTextColor.DARK_AQUA;
+            case "DARK_RED" -> NamedTextColor.DARK_RED;
+            case "DARK_PURPLE" -> NamedTextColor.DARK_PURPLE;
+            case "GOLD" -> NamedTextColor.GOLD;
+            case "GRAY" -> NamedTextColor.GRAY;
+            case "DARK_GRAY" -> NamedTextColor.DARK_GRAY;
+            case "BLUE" -> NamedTextColor.BLUE;
+            case "GREEN" -> NamedTextColor.GREEN;
+            case "AQUA" -> NamedTextColor.AQUA;
+            case "RED" -> NamedTextColor.RED;
+            case "LIGHT_PURPLE" -> NamedTextColor.LIGHT_PURPLE;
+            case "YELLOW" -> NamedTextColor.YELLOW;
+            case "WHITE" -> NamedTextColor.WHITE;
+            default -> null;
+        };
+    }
+
+    @Nullable
+    public static NamedTextColor getNamedTextColor(ChatColor color) {
+        return getNamedTextColor(color.name());
+    }
+
+    /**
+     * CommandSenderに対してメッセージを送信します。
+     *
+     * @param sender    CommandSender
+     * @param detail    MyMaidCommand.Detail
+     * @param component メッセージComponent
+     */
+    public static void SendMessage(CommandSender sender, MyMaidCommand.Detail detail, Component component) {
+        sender.sendMessage(Component.text().append(
+            Component.text("[" + detail.getName().toUpperCase() + "]"),
+            Component.space(),
+            component
+                .replaceText(builder ->
+                    builder
+                        .match("\n")
+                        .replacement("\n" + "[" + detail.getName().toUpperCase() + "] ")
+                )
+                .colorIfAbsent(NamedTextColor.GREEN)
+        ).build());
+    }
+
+    public static Component replaceComponentURL(Component component) {
+        return component.replaceText(TextReplacementConfig.builder()
+            .match(URL_PATTERN)
+            .replacement(url -> url
+                .decorate(TextDecoration.UNDERLINED)
+                .hoverEvent(HoverEvent.showText(Component.text("クリックすると「" + url.content() + "」にアクセスします。")))
+                .clickEvent(ClickEvent.openUrl(url.content()))).build());
+    }
+
+    public static boolean isSign(Material material) {
+        return Arrays.stream(Material.values())
+            .filter(m -> m.data == Sign.class || m.data == WallSign.class)
+            .anyMatch(m -> m == material);
+    }
+
+    /**
+     * Locationオブジェクトを「ワールド X Y Z」の文字列形式で返します。
+     *
+     * @param loc Locationオブジェクト
+     *
+     * @return 「ワールド X Y Z」の文字列形式
+     */
+    public static String formatLocation(Location loc) {
+        return loc.getWorld().getName() + " " + loc.getBlockX() + " " + loc.getBlockY() + " " + loc.getBlockZ();
+    }
+
+    /**
+     * プレイヤーを南の楽園にテレポートさせます。
+     *
+     * @param player テレポートするプレイヤー
+     *
+     * @return テレポートに成功したかどうか
+     *
+     * @throws IllegalStateException Jao_Afaワールドが存在しなかった場合
+     */
+    public static boolean teleportToParadise(Player player) {
+        if (Bukkit.getWorld("Jao_Afa") == null)
+            throw new IllegalStateException("World:Jao_Afa Not Found!");
+
+        return player.teleport(
+            MyMaidData.paradiseLocation,
+            PlayerTeleportEvent.TeleportCause.PLUGIN
+        );
+    }
+
+    /**
      * 指定されたLocationに一番近いプレイヤーを取得します。
      *
      * @param loc Location
      *
      * @return 一番近いプレイヤー
      */
+    @Nullable
     public Player getNearestPlayer(Location loc) {
         double closest = Double.MAX_VALUE;
         Player closestp = null;
@@ -432,73 +699,63 @@ public class MyMaidLibrary {
     }
 
     /**
-     * ワールド名のサジェスト
-     *
-     * @param context CommandContext
-     * @param current current String
-     *
-     * @return 該当するワールド名
-     */
-    public static List<String> suggestWorldNames(final CommandContext<CommandSender> context, final String current) {
-        return Bukkit.getServer().getWorlds().stream()
-            .map(World::getName)
-            .filter(s -> s.toLowerCase().startsWith(current.toLowerCase()))
-            .collect(Collectors.toList());
-    }
-
-    /**
-     * スパムかどうかチェックを行い、状態に応じてJailします
-     *
-     * @param player [player's name]
-     */
-    public static void checkSpam(Player player) {
-        if (MyMaidData.getSpamCount(player.getUniqueId()) == null || MyMaidData.getSpamTime(player.getUniqueId()) == null) {
-            MyMaidData.setSpamCount(player.getUniqueId(), 1);
-            MyMaidData.setSpamTime(player.getUniqueId(), System.currentTimeMillis());
-            return;
-        }
-        int count = MyMaidData.getSpamCount(player.getUniqueId());
-        long time = MyMaidData.getSpamTime(player.getUniqueId());
-
-        if (System.currentTimeMillis() - time > 180000) {
-            //3分
-            MyMaidData.setSpamCount(player.getUniqueId(), 1);
-            MyMaidData.setSpamTime(player.getUniqueId(), System.currentTimeMillis());
-            return;
-        }
-
-        if (count == 2) {
-            /*Jail jail = new Jail(player);
-             *if (jail.isBanned()){
-             *   return();
-             *}
-             *jail.addBan("jaotan", "迷惑コマンドを過去3分間に3回以上実行したため");
-             * */
-            return;
-        } else if (count == 1) {
-            player.sendMessage(String.format("[AntiProblemCommand] %s短時間に複数回にわたる迷惑コマンドが実行された場合、処罰対象となる場合があります。ご注意ください。", ChatColor.GREEN));
-
-        } else {
-            player.sendMessage(String.format("[AntiProblemCommand] %sあなたが実行したコマンドは迷惑コマンドとされています。複数回実行すると、迷惑行為として処罰対象となる場合がございます。", ChatColor.GREEN));
-        }
-        MyMaidData.setSpamCount(player.getUniqueId(), count + 1);
-        MyMaidData.setSpamTime(player.getUniqueId(), System.currentTimeMillis());
-    }
-
-    /**
      * プラグインが有効であるかどうかを取得します。
      *
      * @return プラグインが有効であるか
      */
-    protected boolean isEnabledPlugin(String pluginName) {
+    protected boolean isDisabledPlugin(String pluginName) {
         Plugin plugin = Main.getJavaPlugin().getServer().getPluginManager().getPlugin(pluginName);
-        return plugin != null && plugin.isEnabled();
+        return plugin == null || !plugin.isEnabled();
     }
 
-    public static void debug(String message) {
-        if (!Main.getMyMaidConfig().isDevelopmentServer()) {
-            return;
+    protected boolean getLookingAt(Player player, Player target) {
+        Location eye = player.getEyeLocation();
+        Vector toEntity = target.getEyeLocation().toVector().subtract(eye.toVector());
+        double dot = toEntity.normalize().dot(eye.getDirection());
+
+        return dot > 0.99D;
+    }
+
+    protected boolean isEntityLooking(Player player, Entity target) {
+        Location eye = player.getEyeLocation();
+        Location location;
+        if (target instanceof LivingEntity) {
+            location = ((LivingEntity) target).getEyeLocation();
+        } else {
+            location = target.getLocation();
         }
-        System.out.printf("DEBUG -> %s%n", message);
+        Vector toEntity = location.toVector().subtract(eye.toVector());
+        double dot = toEntity.normalize().dot(eye.getDirection());
+
+        return dot > 0.99D;
+    }
+
+    /**
+     * jaoiumと判定されるアイテムかどうか
+     *
+     * @param list PotionEffectのList
+     *
+     * @return jaoiumかどうか
+     */
+    public boolean isjaoium(List<PotionEffect> list) {
+        boolean jaoium = false;
+        for (PotionEffect po : list) {
+            if (po.getType().equals(PotionEffectType.HEAL)) {
+                if (Arrays.asList(
+                    29,
+                    61,
+                    93,
+                    125
+                ).contains(po.getAmplifier())) {
+                    // アウト
+                    jaoium = true;
+                }
+            }
+        }
+        return jaoium;
+    }
+
+    public void wrapGetAchievement(Player player, String achievement) {
+
     }
 }

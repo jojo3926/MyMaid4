@@ -1,7 +1,7 @@
 /*
  * jaoLicense
  *
- * Copyright (c) 2021 jao Minecraft Server
+ * Copyright (c) 2022 jao Minecraft Server
  *
  * The following license applies to this project: jaoLicense
  *
@@ -14,7 +14,7 @@ package com.jaoafa.mymaid4.lib;
 import com.jaoafa.mymaid4.Main;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
-import net.dv8tion.jda.api.hooks.AnnotatedEventManager;
+import net.dv8tion.jda.api.requests.GatewayIntent;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -32,6 +32,8 @@ public class MyMaidConfig {
     private Long jaotanChannelId = null;
     private Long reportChannelId = null;
     private Long serverChatChannelId = null;
+    private String githubAccessToken = null;
+    private String rollbarAccessToken = null;
 
     public void init() {
         JavaPlugin plugin = Main.getJavaPlugin();
@@ -68,11 +70,10 @@ public class MyMaidConfig {
             if (discord.contains("token")) {
                 try {
                     JDABuilder jdabuilder = JDABuilder.createDefault(discord.getString("token"))
-                        // .enableIntents(GatewayIntent.GUILD_MEMBERS, GatewayIntent.GUILD_PRESENCES)
+                        .enableIntents(GatewayIntent.GUILD_MEMBERS, GatewayIntent.GUILD_PRESENCES, GatewayIntent.GUILD_MESSAGES)
                         .setAutoReconnect(true)
                         .setBulkDeleteSplittingEnabled(false)
                         .setContextEnabled(false)
-                        .setEventManager(new AnnotatedEventManager())
                         .setRawEventsEnabled(false);
 
                     Main.registerDiscordEvent(jdabuilder);
@@ -100,7 +101,7 @@ public class MyMaidConfig {
                 MyMaidData.setMainMySQLDBManager(new MySQLDBManager(hostname, port, username, password, dbname));
             } catch (ClassNotFoundException e) {
                 plugin.getLogger().warning("MainDBのInitに失敗しました（ClassNotFoundException）一部の機能は無効化されます。");
-                e.printStackTrace();
+                MyMaidLibrary.reportError(getClass(), e);
             }
         } else {
             plugin.getLogger().warning(notFoundConfigKey("main_database"));
@@ -118,10 +119,22 @@ public class MyMaidConfig {
                 MyMaidData.setZKRHatMySQLDBManager(new MySQLDBManager(hostname, port, username, password, dbname));
             } catch (ClassNotFoundException e) {
                 plugin.getLogger().warning("ZakuroHatDBのInitに失敗しました（ClassNotFoundException）一部の機能は無効化されます。");
-                e.printStackTrace();
+                MyMaidLibrary.reportError(getClass(), e);
             }
         } else {
             plugin.getLogger().warning(notFoundConfigKey("zakurohat_database"));
+        }
+
+        if (config.contains("githubAccessToken")) {
+            githubAccessToken = config.getString("githubAccessToken");
+        } else {
+            plugin.getLogger().warning(notFoundConfigKey("githubAccessToken"));
+        }
+
+        if (config.contains("rollbarAccessToken")) {
+            rollbarAccessToken = config.getString("rollbarAccessToken");
+        } else {
+            plugin.getLogger().warning(notFoundConfigKey("rollbarAccessToken"));
         }
     }
 
@@ -152,5 +165,13 @@ public class MyMaidConfig {
 
     public Long getServerChatChannelId() {
         return serverChatChannelId;
+    }
+
+    public String getGitHubAccessToken() {
+        return githubAccessToken;
+    }
+
+    public String getRollbarAccessToken() {
+        return rollbarAccessToken;
     }
 }
